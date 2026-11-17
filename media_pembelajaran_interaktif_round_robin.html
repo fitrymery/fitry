@@ -1,0 +1,1789 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Media Pembelajaran Interaktif — Algoritma Penjadwalan CPU Round Robin</title>
+  <!-- Google Fonts: Inter untuk teks UI & JetBrains Mono untuk angka/rumus/Gantt -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            navy: {
+              DEFAULT: '#1B365D',
+              dark: '#122542',
+              light: '#274B80',
+            },
+            teal: {
+              slate: '#2B6CB0',
+              soft: '#EBF4FF',
+            },
+            ice: '#F8FAFC',
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Pola arsir diagonal untuk blok CPU Idle pada Gantt Chart */
+    .bg-idle-hatch {
+      background-color: #E2E8F0;
+      background-image: repeating-linear-gradient(
+        45deg,
+        #CBD5E1,
+        #CBD5E1 6px,
+        #E2E8F0 6px,
+        #E2E8F0 12px
+      );
+    }
+
+    /* Animasi transisi halus */
+    .fade-in {
+      animation: fadeIn 0.25s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Scrollbar rapi untuk tabel dan Gantt Chart pada layar mobile */
+    ::-webkit-scrollbar {
+      height: 7px;
+      width: 7px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #F1F5F9;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #94A3B8;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #64748B;
+    }
+  </style>
+</head>
+<body class="bg-ice text-slate-800 font-sans antialiased min-h-screen flex flex-col">
+
+  <!-- ==================== HEADER UTAMA ==================== -->
+  <header class="bg-navy text-white shadow-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <!-- Identitas Mata Kuliah & Judul -->
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-teal-slate flex items-center justify-center shadow-inner shrink-0 border border-blue-400/30">
+            <!-- Ikon CPU / Round Robin Circular SVG -->
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </div>
+          <div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="text-[11px] font-semibold uppercase tracking-wider bg-blue-900/80 text-blue-200 px-2.5 py-0.5 rounded-full border border-blue-400/20">
+                Sistem Operasi • Media Pembelajaran
+              </span>
+            </div>
+            <h1 class="text-lg sm:text-xl font-bold tracking-tight text-white mt-0.5">
+              Algoritma Penjadwalan CPU Round Robin
+            </h1>
+          </div>
+        </div>
+
+        <!-- Navigasi 3 Tab Utama -->
+        <nav class="flex bg-navy-dark/80 p-1 rounded-xl border border-white/10 overflow-x-auto" aria-label="Menu Utama">
+          <button id="btn-tab-materi" onclick="switchTab('materi')"
+            class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all whitespace-nowrap bg-teal-slate text-white shadow">
+            <span>1. Materi &amp; Teori</span>
+          </button>
+          <button id="btn-tab-simulator" onclick="switchTab('simulator')"
+            class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all whitespace-nowrap text-slate-300 hover:text-white hover:bg-white/5">
+            <span>2. Simulator &amp; Studi Kasus</span>
+          </button>
+          <button id="btn-tab-kuis" onclick="switchTab('kuis')"
+            class="tab-btn flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all whitespace-nowrap text-slate-300 hover:text-white hover:bg-white/5">
+            <span>3. Latihan &amp; Kuis</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- Toast Notifikasi Non-Blocking (Pengganti alert()) -->
+  <div id="toast-banner" class="hidden fixed bottom-5 right-5 z-50 max-w-sm bg-navy text-white px-4 py-3 rounded-xl shadow-xl border border-blue-400/30 text-sm flex items-center gap-2.5 fade-in">
+    <span id="toast-icon" class="text-amber-300 font-bold">ⓘ</span>
+    <span id="toast-message">Pesan notifikasi</span>
+  </div>
+
+  <!-- ==================== KONTEN UTAMA ==================== -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- =================================================================== -->
+    <!-- TAB 1: MATERI & TEORI PENDUKUNG                                     -->
+    <!-- =================================================================== -->
+    <section id="tab-materi" class="space-y-6 fade-in">
+
+      <!-- 1. Konsep Dasar & Mekanisme Circular FIFO + Aturan Tie-Break -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7">
+        <div class="flex flex-col lg:flex-row gap-6 items-start">
+          <div class="flex-1 space-y-4">
+            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-soft text-teal-slate text-xs font-bold uppercase tracking-wide">
+              Konsep Fundamental
+            </div>
+            <h2 class="text-xl sm:text-2xl font-bold text-navy">
+              1. Konsep Dasar Penjadwalan CPU Round Robin (RR)
+            </h2>
+            <p class="text-sm sm:text-base text-slate-600 leading-relaxed">
+              Algoritma <strong>Round Robin (RR)</strong> adalah algoritma penjadwalan CPU bersifat <em>preemptive</em> yang dirancang khusus untuk sistem <em>time-sharing</em> dan interaktif. Setiap proses di dalam <em>ready queue</em> (antrean siap) dikelola menggunakan struktur antrean melingkar berdisiplin <strong>FIFO (First-In, First-Out)</strong> dan memperoleh jatah waktu prosesor maksimal sebesar satu <strong>Time Quantum ($TQ$)</strong> secara bergiliran.
+            </p>
+            <p class="text-sm text-slate-600 leading-relaxed">
+              Apabila terdapat $n$ proses aktif di antrean tanpa pembobotan prioritas, setiap proses dijamin memperoleh sekurang-kurangnya $1/n$ kapasitas CPU dan tidak akan menunggu lebih dari $(n - 1) \times TQ$ satuan waktu sebelum giliran eksekusi berikutnya. Mekanisme ini secara efektif mencegah terjadinya <strong>starvation</strong> (kelaparan sumber daya pada proses berdurasi panjang).
+            </p>
+
+            <!-- Kotak Aturan Disiplin Antrean & Tie-Break -->
+            <div class="bg-blue-50/80 border-l-4 border-teal-slate rounded-r-xl p-4 space-y-2">
+              <h3 class="text-sm font-bold text-navy flex items-center gap-2">
+                <span>⚖️ Aturan Disiplin Antrean &amp; Aturan Tie-Break (Krusial pada AT ≠ 0)</span>
+              </h3>
+              <ul class="text-xs sm:text-sm text-slate-700 space-y-1.5 list-disc pl-5">
+                <li><strong>Urutan Awal:</strong> Antrean diurutkan menurut waktu kedatangan (<em>Arrival Time / AT</em>); jika identik, diurutkan menurut indeks proses ($P_1, P_2, \dots, P_n$).</li>
+                <li><strong>Aturan Tie-Break:</strong> Apabila sebuah proses baru tiba <em>tepat pada saat</em> $TQ$ proses yang sedang berjalan habis ($t_{\text{tiba}} = t_{\text{selesai}}$), <strong>proses yang baru tiba dimasukkan ke ekor <em>ready queue</em> lebih dulu</strong> sebelum proses yang baru di-<em>preempt</em>.</li>
+                <li><strong>Rotasi Preemption:</strong> Jika sisa <em>Burst Time</em> ($BT_{\text{sisa}} > 0$) setelah $TQ$ habis, proses dihentikan sementara (<em>preempted</em>) dan dikembalikan ke ekor antrean FIFO.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Diagram Visual Alur Circular FIFO Round Robin -->
+          <div class="w-full lg:w-[410px] bg-slate-50 rounded-2xl border border-slate-200 p-4 shrink-0">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-500 text-center mb-3">
+              Diagram Alur Preemptive Circular FIFO
+            </h3>
+            <svg viewBox="0 0 380 250" class="w-full h-auto">
+              <defs>
+                <marker id="arrow-navy" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#1B365D" />
+                </marker>
+                <marker id="arrow-teal" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#2B6CB0" />
+                </marker>
+                <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#D97706" />
+                </marker>
+                <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                  <path d="M 0 1 L 10 5 L 0 9 z" fill="#059669" />
+                </marker>
+              </defs>
+
+              <!-- Proses Baru Datang -->
+              <rect x="10" y="22" width="105" height="38" rx="8" fill="#EBF4FF" stroke="#2B6CB0" stroke-width="1.5" />
+              <text x="62" y="38" text-anchor="middle" font-size="10" font-weight="700" fill="#1B365D">Proses Baru Tiba</text>
+              <text x="62" y="51" text-anchor="middle" font-size="9" fill="#2B6CB0">(AT = t)</text>
+
+              <!-- Panah Masuk Ekor Ready Queue -->
+              <line x1="115" y1="41" x2="148" y2="41" stroke="#2B6CB0" stroke-width="2" marker-end="url(#arrow-teal)" />
+
+              <!-- Ready Queue FIFO Box -->
+              <rect x="152" y="16" width="215" height="50" rx="10" fill="#FFFFFF" stroke="#1B365D" stroke-width="2" />
+              <text x="259" y="33" text-anchor="middle" font-size="10" font-weight="700" fill="#1B365D">READY QUEUE (Antrean FIFO)</text>
+              <rect x="164" y="40" width="38" height="18" rx="4" fill="#E2E8F0" />
+              <text x="183" y="52" text-anchor="middle" font-size="9" font-weight="600" fill="#334155">Ekor</text>
+              <text x="214" y="52" text-anchor="middle" font-size="10" fill="#64748B">→</text>
+              <rect x="226" y="40" width="46" height="18" rx="4" fill="#DBEAFE" />
+              <text x="249" y="52" text-anchor="middle" font-size="9" font-weight="600" fill="#1E40AF">Proses</text>
+              <text x="284" y="52" text-anchor="middle" font-size="10" fill="#64748B">→</text>
+              <rect x="296" y="40" width="58" height="18" rx="4" fill="#1B365D" />
+              <text x="325" y="52" text-anchor="middle" font-size="9" font-weight="700" fill="#FFFFFF">Kepala</text>
+
+              <!-- Panah Kepala Queue ke CPU -->
+              <path d="M 325 66 L 325 112 L 265 112" fill="none" stroke="#1B365D" stroke-width="2" marker-end="url(#arrow-navy)" />
+              <text x="332" y="92" font-size="9" font-weight="600" fill="#1B365D">Dispatch</text>
+
+              <!-- CPU Box -->
+              <rect x="135" y="92" width="125" height="56" rx="12" fill="#1B365D" />
+              <text x="197" y="114" text-anchor="middle" font-size="12" font-weight="800" fill="#FFFFFF">CPU EKSEKUSI</text>
+              <text x="197" y="131" text-anchor="middle" font-size="9.5" fill="#93C5FD">Maks. 1 Time Quantum</text>
+
+              <!-- Panah ke Kondisi Selesai vs Preempt -->
+              <line x1="197" y1="148" x2="197" y2="176" stroke="#1B365D" stroke-width="2" marker-end="url(#arrow-navy)" />
+
+              <!-- Cabang Kiri: Preempted -->
+              <rect x="20" y="180" width="145" height="48" rx="8" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5" />
+              <text x="92" y="199" text-anchor="middle" font-size="10" font-weight="700" fill="#92400E">TQ Habis (Sisa BT &gt; 0)</text>
+              <text x="92" y="213" text-anchor="middle" font-size="9" fill="#B45309">Preempt → Kembali ke Ekor</text>
+
+              <!-- Panah Preempt kembali ke Ekor Ready Queue -->
+              <path d="M 92 180 L 92 82 L 183 82 L 183 69" fill="none" stroke="#D97706" stroke-width="1.8" stroke-dasharray="4 3" marker-end="url(#arrow-amber)" />
+              <text x="48" y="130" font-size="8.5" font-weight="700" fill="#B45309">Tie-Break:</text>
+              <text x="48" y="141" font-size="8" fill="#B45309">Masuk setelah</text>
+              <text x="48" y="151" font-size="8" fill="#B45309">proses baru</text>
+
+              <!-- Cabang Kanan: Selesai -->
+              <rect x="215" y="180" width="145" height="48" rx="8" fill="#D1FAE5" stroke="#059669" stroke-width="1.5" />
+              <text x="287" y="199" text-anchor="middle" font-size="10" font-weight="700" fill="#065F46">Sisa BT = 0</text>
+              <text x="287" y="213" text-anchor="middle" font-size="9" fill="#047857">Proses Selesai (Catat CT)</text>
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Analisis Trade-Off Time Quantum (TQ) -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7 space-y-4">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-teal-slate">Sensitivitas Parameter</span>
+          <h2 class="text-xl font-bold text-navy mt-0.5">
+            2. Analisis Trade-Off Ukuran Time Quantum ($TQ$)
+          </h2>
+          <p class="text-sm text-slate-600 mt-1">
+            Berdasarkan simulasi Tampubolon &amp; Fajri (2025) dan Putra &amp; Purnomo (2021), pemilihan nilai $TQ$ statis menentukan keseimbangan antara kecepatan respons interaktif dan efisiensi beban <em>context switching</em>.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <!-- TQ Terlalu Kecil -->
+          <div class="rounded-xl border border-rose-200 bg-rose-50/50 p-4 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-800 text-xs font-bold">TQ Terlalu Kecil</span>
+              <span class="font-mono text-xs font-semibold text-rose-700">TQ = 1 – 2 ms</span>
+            </div>
+            <h3 class="font-bold text-slate-800 text-sm">Overhead Context Switch Tinggi</h3>
+            <ul class="text-xs text-slate-600 space-y-1.5 list-disc pl-4">
+              <li><strong>Response Time (RT):</strong> Sangat cepat karena antrean bergulir instan.</li>
+              <li><strong>Context Switch (NCS):</strong> Melonjak drastis (menyimpan &amp; memuat ulang PCB terus-menerus).</li>
+              <li><strong>AWT &amp; ATAT:</strong> Meningkat karena proses terpotong-potong terlalu sering.</li>
+            </ul>
+          </div>
+
+          <!-- TQ Moderat / Optimal -->
+          <div class="rounded-xl border-2 border-teal-slate bg-blue-50/60 p-4 space-y-2.5 shadow-sm relative">
+            <div class="flex items-center justify-between">
+              <span class="px-2.5 py-0.5 rounded-md bg-teal-slate text-white text-xs font-bold">TQ Moderat / Optimal</span>
+              <span class="font-mono text-xs font-semibold text-teal-slate">TQ ≈ Mean BT</span>
+            </div>
+            <h3 class="font-bold text-navy text-sm">Titik Keseimbangan (Sweet Spot)</h3>
+            <ul class="text-xs text-slate-700 space-y-1.5 list-disc pl-4">
+              <li><strong>Response Time (RT):</strong> Tetap responsif untuk tugas interaktif.</li>
+              <li><strong>Context Switch (NCS):</strong> Terkendali dan proporsional.</li>
+              <li><strong>AWT &amp; ATAT:</strong> Minimum &amp; efisien (sekitar 80% <em>CPU burst</em> tuntas dalam 1 putaran).</li>
+            </ul>
+          </div>
+
+          <!-- TQ Terlalu Besar -->
+          <div class="rounded-xl border border-amber-200 bg-amber-50/50 p-4 space-y-2.5">
+            <div class="flex items-center justify-between">
+              <span class="px-2.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-xs font-bold">TQ Terlalu Besar</span>
+              <span class="font-mono text-xs font-semibold text-amber-700">TQ ≥ Max BT</span>
+            </div>
+            <h3 class="font-bold text-slate-800 text-sm">Degradasi ke FCFS &amp; Convoy Effect</h3>
+            <ul class="text-xs text-slate-600 space-y-1.5 list-disc pl-4">
+              <li><strong>Response Time (RT):</strong> Melambat karena proses di belakang menunggu proses panjang selesai.</li>
+              <li><strong>Context Switch (NCS):</strong> Minimal ($n - 1$ kali).</li>
+              <li><strong>Perilaku Sistem:</strong> Kehilangan sifat <em>preemptive</em> dan berubah menjadi <em>First-Come, First-Served</em>.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Kartu Formulasi Metrik Evaluasi -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7 space-y-4">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-teal-slate">Persamaan Matematis</span>
+          <h2 class="text-xl font-bold text-navy mt-0.5">
+            3. Formulasi Metrik Evaluasi Kinerja Penjadwalan CPU
+          </h2>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          <!-- CT -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between">
+            <div>
+              <span class="text-[11px] font-bold uppercase text-teal-slate">Metrik 1</span>
+              <h3 class="font-bold text-navy text-sm mt-0.5">Completion Time (CT)</h3>
+              <p class="text-xs text-slate-600 mt-1.5">Titik waktu absolut ketika proses menyelesaikan seluruh <em>burst time</em>-nya.</p>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-slate-200 font-mono text-xs font-bold text-navy">
+              CT = t_selesai_akhir
+            </div>
+          </div>
+
+          <!-- TAT -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between">
+            <div>
+              <span class="text-[11px] font-bold uppercase text-teal-slate">Metrik 2</span>
+              <h3 class="font-bold text-navy text-sm mt-0.5">Turnaround Time (TAT)</h3>
+              <p class="text-xs text-slate-600 mt-1.5">Total durasi proses berada di sistem sejak tiba hingga tuntas.</p>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-slate-200 font-mono text-xs font-bold text-navy">
+              TAT = CT − AT
+            </div>
+          </div>
+
+          <!-- WT -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between">
+            <div>
+              <span class="text-[11px] font-bold uppercase text-teal-slate">Metrik 3</span>
+              <h3 class="font-bold text-navy text-sm mt-0.5">Waiting Time (WT)</h3>
+              <p class="text-xs text-slate-600 mt-1.5">Total akumulasi waktu tunggu bersih proses di dalam <em>ready queue</em>.</p>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-slate-200 font-mono text-xs font-bold text-navy">
+              WT = TAT − BT
+            </div>
+          </div>
+
+          <!-- RT -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between">
+            <div>
+              <span class="text-[11px] font-bold uppercase text-teal-slate">Metrik 4</span>
+              <h3 class="font-bold text-navy text-sm mt-0.5">Response Time (RT)</h3>
+              <p class="text-xs text-slate-600 mt-1.5">Jeda dari kedatangan proses hingga pertama kali mendapat CPU.</p>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-slate-200 font-mono text-xs font-bold text-navy">
+              RT = T_mulai_1 − AT
+            </div>
+          </div>
+
+          <!-- NCS -->
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between">
+            <div>
+              <span class="text-[11px] font-bold uppercase text-teal-slate">Metrik 5</span>
+              <h3 class="font-bold text-navy text-sm mt-0.5">Context Switches (NCS)</h3>
+              <p class="text-xs text-slate-600 mt-1.5">Frekuensi perpindahan eksekusi pada <em>Gantt Chart</em> (tanpa <em>CPU Idle</em>).</p>
+            </div>
+            <div class="mt-3 pt-2.5 border-t border-slate-200 font-mono text-xs font-bold text-navy">
+              NCS = Segmen − 1
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Sintesis Inovasi 10 Jurnal CJR -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7 space-y-4">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-teal-slate">Kajian Literatur CJR</span>
+            <h2 class="text-xl font-bold text-navy mt-0.5">
+              4. Sintesis Evolusi 10 Jurnal: Static RR vs Dynamic Time Quantum
+            </h2>
+          </div>
+          <button onclick="switchTab('simulator')" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-navy hover:bg-navy-light text-white text-xs sm:text-sm font-semibold transition shadow-sm">
+            <span>Uji Studi Kasus di Simulator</span>
+            <span>→</span>
+          </button>
+        </div>
+
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-navy text-white">
+                <th class="py-3 px-4 font-semibold">Varian / Pendekatan</th>
+                <th class="py-3 px-4 font-semibold">Referensi Jurnal CJR</th>
+                <th class="py-3 px-4 font-semibold">Mekanisme Penentuan TQ</th>
+                <th class="py-3 px-4 font-semibold">Keunggulan Utama</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-200">
+              <tr class="hover:bg-slate-50">
+                <td class="py-3 px-4 font-bold text-navy">Round Robin Klasik (Static TQ)</td>
+                <td class="py-3 px-4 text-slate-600">Putra &amp; Purnomo (2021); Widiarto et al. (2024); Tampubolon &amp; Fajri (2025); Sugiarti et al. (2026)</td>
+                <td class="py-3 px-4 font-mono text-xs">TQ konstan sejak awal hingga akhir eksekusi</td>
+                <td class="py-3 px-4 text-slate-700">Sederhana, adil (bebas <em>starvation</em>), unggul pada <em>Response Time</em> sistem interaktif.</td>
+              </tr>
+              <tr class="hover:bg-slate-50 bg-slate-50/50">
+                <td class="py-3 px-4 font-bold text-teal-slate">Simulated Annealing RR</td>
+                <td class="py-3 px-4 text-slate-600">Gea (2015)</td>
+                <td class="py-3 px-4 font-mono text-xs">Optimasi stokastik global (α = 0,90 – 0,99)</td>
+                <td class="py-3 px-4 text-slate-700">Menemukan nilai TQ optimal global untuk ratusan proses tanpa terjebak optimum lokal.</td>
+              </tr>
+              <tr class="hover:bg-slate-50">
+                <td class="py-3 px-4 font-bold text-teal-slate">MARR (Median-Average RR)</td>
+                <td class="py-3 px-4 text-slate-600">Sakshi et al. (2022)</td>
+                <td class="py-3 px-4 font-mono text-xs">TQ = (Median BT + Mean BT) / 2</td>
+                <td class="py-3 px-4 text-slate-700">Meredam distorsi <em>outlier</em> proses panjang dan memangkas AWT &amp; NCS secara signifikan.</td>
+              </tr>
+              <tr class="hover:bg-slate-50 bg-slate-50/50">
+                <td class="py-3 px-4 font-bold text-teal-slate">DADQRR (Different Arrival Dynamic)</td>
+                <td class="py-3 px-4 text-slate-600">Ahmad (2022)</td>
+                <td class="py-3 px-4 font-mono text-xs">TQ = AccBT / IQPN + bonus 0,5 × TQ</td>
+                <td class="py-3 px-4 text-slate-700">Adaptif secara <em>real-time</em> khusus untuk kedatangan dinamis berbeda (<em>AT ≠ 0</em>).</td>
+              </tr>
+              <tr class="hover:bg-slate-50">
+                <td class="py-3 px-4 font-bold text-teal-slate">Relative TQ (PMM, CA, MC, MM)</td>
+                <td class="py-3 px-4 text-slate-600">Iqbal et al. (2022)</td>
+                <td class="py-3 px-4 font-mono text-xs">Pembagian 2 sub-antrean &amp; kuantum relatif</td>
+                <td class="py-3 px-4 text-slate-700">Skalabilitas tinggi hingga 200.000 proses pada ekosistem IoT dan <em>Fog Computing</em>.</td>
+              </tr>
+              <tr class="hover:bg-slate-50 bg-slate-50/50">
+                <td class="py-3 px-4 font-bold text-teal-slate">RRAPS (Adaptive Priority RR)</td>
+                <td class="py-3 px-4 text-slate-600">Iqbal et al. (2023)</td>
+                <td class="py-3 px-4 font-mono text-xs">TQ = Mean BT + penurunan prioritas (−1)</td>
+                <td class="py-3 px-4 text-slate-700">Menyatukan responsivitas prioritas <em>real-time</em> dengan jaminan anti-<em>starvation</em>.</td>
+              </tr>
+              <tr class="hover:bg-slate-50">
+                <td class="py-3 px-4 font-bold text-teal-slate">ERRDTQ (80th Percentile Cloud)</td>
+                <td class="py-3 px-4 text-slate-600">Zohora et al. (2024)</td>
+                <td class="py-3 px-4 font-mono text-xs">Persentil ke-80 BT + checkpoint 1/3 TQ</td>
+                <td class="py-3 px-4 text-slate-700">Menghancurkan <em>convoy effect</em> pada beban asimetris <em>Virtual Machine</em> di <em>Cloud</em>.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 2: SIMULATOR INTERAKTIF & STUDI KASUS JURNAL                    -->
+    <!-- =================================================================== -->
+    <section id="tab-simulator" class="hidden space-y-6 fade-in">
+
+      <!-- 1. Panel Studi Kasus Preset & Validasi Syarat Kedatangan -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-teal-slate">Dataset Studi Kasus</span>
+            <h2 class="text-lg sm:text-xl font-bold text-navy">
+              Pilih Preset Studi Kasus Jurnal atau Masukkan Data Kustom
+            </h2>
+          </div>
+
+          <!-- Badge Indikator Syarat Kasus (Real-Time Validation) -->
+          <div id="criteria-badges" class="flex flex-wrap items-center gap-2">
+            <!-- Diisi dinamis oleh JS -->
+          </div>
+        </div>
+
+        <!-- 5 Tombol Preset Studi Kasus -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+          <button onclick="loadPreset('preset1')" id="btn-preset1"
+            class="preset-btn text-left p-3 rounded-xl border-2 border-teal-slate bg-blue-50/70 transition hover:shadow-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold uppercase text-teal-slate">Preset 1 (Wajib)</span>
+              <span class="font-mono text-[11px] bg-navy text-white px-2 py-0.5 rounded">TQ=3</span>
+            </div>
+            <p class="text-xs font-bold text-navy mt-1">2 AT Sama &amp; 2 AT Berbeda</p>
+            <p class="text-[11px] text-slate-600 mt-0.5">4 Proses (t=0, 0, 2, 5)</p>
+          </button>
+
+          <button onclick="loadPreset('preset2_25')" id="btn-preset2"
+            class="preset-btn text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-teal-slate/60 transition hover:shadow-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold uppercase text-slate-500">Preset 2 • Jurnal</span>
+              <span class="font-mono text-[11px] bg-slate-200 text-slate-800 px-2 py-0.5 rounded">AT=0</span>
+            </div>
+            <p class="text-xs font-bold text-navy mt-1">Iqbal et al. (2023) Kasus 1</p>
+            <p class="text-[11px] text-slate-600 mt-0.5">Uji TQ=25 ms vs TQ=15 ms</p>
+          </button>
+
+          <button onclick="loadPreset('preset3')" id="btn-preset3"
+            class="preset-btn text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-teal-slate/60 transition hover:shadow-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold uppercase text-slate-500">Preset 3 • Jurnal</span>
+              <span class="font-mono text-[11px] bg-slate-200 text-slate-800 px-2 py-0.5 rounded">TQ=4</span>
+            </div>
+            <p class="text-xs font-bold text-navy mt-1">Widiarto et al. (2024)</p>
+            <p class="text-[11px] text-slate-600 mt-0.5">5 Proses AT Berbeda</p>
+          </button>
+
+          <button onclick="loadPreset('preset4')" id="btn-preset4"
+            class="preset-btn text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-teal-slate/60 transition hover:shadow-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold uppercase text-slate-500">Preset 4 • Jurnal</span>
+              <span class="font-mono text-[11px] bg-slate-200 text-slate-800 px-2 py-0.5 rounded">TQ=3</span>
+            </div>
+            <p class="text-xs font-bold text-navy mt-1">Tampubolon &amp; Fajri (2025)</p>
+            <p class="text-[11px] text-slate-600 mt-0.5">10 Proses Simulasi Java</p>
+          </button>
+
+          <button onclick="loadPreset('preset5')" id="btn-preset5"
+            class="preset-btn text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-teal-slate/60 transition hover:shadow-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold uppercase text-slate-500">Preset 5 • Jurnal</span>
+              <span class="font-mono text-[11px] bg-slate-200 text-slate-800 px-2 py-0.5 rounded">TQ=2</span>
+            </div>
+            <p class="text-xs font-bold text-navy mt-1">Sugiarti et al. (2026)</p>
+            <p class="text-[11px] text-slate-600 mt-0.5">5 Proses Beban Seimbang</p>
+          </button>
+        </div>
+
+        <!-- Kotak Deskripsi Preset & Opsi Cepat TQ untuk Preset 2 -->
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <p id="preset-description" class="text-xs sm:text-sm text-slate-700 leading-relaxed">
+            <strong>Preset 1 (Kasus Gabungan Wajib):</strong> Menguji 4 proses di mana <strong>P1 (AT=0)</strong> dan <strong>P2 (AT=0)</strong> tiba bersamaan di detik ke-0, sedangkan <strong>P3 (AT=2)</strong> dan <strong>P4 (AT=5)</strong> menyusul pada waktu berbeda dengan <strong>TQ = 3</strong>.
+          </p>
+          <div id="preset2-tq-toggle" class="hidden shrink-0 flex items-center gap-2">
+            <span class="text-xs font-semibold text-slate-600">Bandingkan TQ:</span>
+            <button onclick="setQuickTQ(25)" id="btn-tq-25" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-navy text-white">TQ = 25 ms</button>
+            <button onclick="setQuickTQ(15)" id="btn-tq-15" class="px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-white border border-slate-300 text-slate-700 hover:bg-slate-100">TQ = 15 ms</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2. Grid Utama: Input Kustom (Kiri) & Playback Step-by-Step (Kanan) -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+        <!-- KOLOM KIRI (5 cols): Panel Input Kustom dari Luar -->
+        <div class="lg:col-span-5 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+          <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h3 class="text-base font-bold text-navy">Input Parameter &amp; Antrean Proses</h3>
+              <p class="text-xs text-slate-500">Ubah nilai langsung untuk eksperimen bebas</p>
+            </div>
+            <!-- Kontrol Time Quantum -->
+            <div class="flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-xl border border-blue-200">
+              <label for="input-tq" class="text-xs font-bold text-navy">TQ:</label>
+              <button onclick="adjustTQ(-1)" class="w-6 h-6 rounded-md bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center">−</button>
+              <input id="input-tq" type="number" min="1" max="500" value="3" onchange="handleInputChange()"
+                class="w-12 text-center font-mono text-sm font-bold text-navy bg-white border border-slate-300 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-teal-slate" />
+              <button onclick="adjustTQ(1)" class="w-6 h-6 rounded-md bg-white border border-slate-300 text-slate-700 font-bold hover:bg-slate-100 flex items-center justify-center">+</button>
+            </div>
+          </div>
+
+          <!-- Tabel Input Dinamis -->
+          <div class="overflow-x-auto max-h-[340px] overflow-y-auto rounded-xl border border-slate-200">
+            <table class="w-full text-left border-collapse text-xs sm:text-sm">
+              <thead class="bg-slate-100 text-slate-700 sticky top-0 z-10">
+                <tr>
+                  <th class="py-2.5 px-3 font-bold">Proses</th>
+                  <th class="py-2.5 px-3 font-bold text-center">Arrival Time (AT)</th>
+                  <th class="py-2.5 px-3 font-bold text-center">Burst Time (BT)</th>
+                  <th class="py-2.5 px-2 font-bold text-center">Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="process-input-tbody" class="divide-y divide-slate-200">
+                <!-- Baris proses dirender oleh JavaScript -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Tombol Tambah Proses & Reset Simulasi -->
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <button onclick="addProcessRow()"
+              class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-soft text-teal-slate hover:bg-blue-100 font-semibold text-xs transition border border-blue-200">
+              <span>+ Tambah Proses</span>
+            </button>
+            <button onclick="runSimulation(true)"
+              class="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-navy hover:bg-navy-light text-white font-semibold text-xs transition shadow-sm">
+              <span>↻ Hitung Ulang Simulasi</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- KOLOM KANAN (7 cols): Kontrol Playback & Visualisasi Real-Time -->
+        <div class="lg:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4">
+          <!-- Header & Tombol Kontrol Step-by-Step -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-base font-bold text-navy">Simulasi Bertahap (Step-by-Step)</h3>
+                <span id="step-counter-badge" class="font-mono text-xs font-bold px-2.5 py-0.5 rounded-full bg-navy text-white">
+                  Langkah 1 / 7
+                </span>
+              </div>
+              <p class="text-xs text-slate-500 mt-0.5">Amati perpindahan CPU, isi antrean FIFO, dan aturan tie-break tiap segmen</p>
+            </div>
+
+            <!-- Pengatur Kecepatan Auto-Play -->
+            <div class="flex items-center gap-2">
+              <label for="play-speed" class="text-xs font-medium text-slate-500">Kecepatan:</label>
+              <select id="play-speed" onchange="updatePlaySpeed()" class="text-xs border border-slate-300 rounded-lg px-2 py-1.5 bg-slate-50 font-medium text-slate-700 focus:outline-none">
+                <option value="1600">Lambat (1.6s)</option>
+                <option value="950" selected>Normal (0.95s)</option>
+                <option value="450">Cepat (0.45s)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Bar Tombol Navigasi Langkah -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button onclick="goToStep(0)" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition">
+              ⏮ Awal
+            </button>
+            <button onclick="prevStep()" id="btn-prev-step" class="px-3.5 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition disabled:opacity-40">
+              ◀ Sebelumnya
+            </button>
+            <button onclick="toggleAutoPlay()" id="btn-autoplay" class="px-4 py-2 rounded-xl bg-teal-slate hover:bg-blue-700 text-white text-xs font-bold transition shadow-sm flex items-center gap-1.5">
+              <span id="autoplay-icon">▶</span>
+              <span id="autoplay-label">Auto Play</span>
+            </button>
+            <button onclick="nextStep()" id="btn-next-step" class="px-3.5 py-2 rounded-xl bg-navy hover:bg-navy-light text-white text-xs font-semibold transition disabled:opacity-40">
+              Berikutnya ▶
+            </button>
+            <button onclick="goToLastStep()" class="px-3 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition ml-auto">
+              Akhir ⏭
+            </button>
+          </div>
+
+          <!-- Kartu Status CPU Aktif & Antrean Ready Queue -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+            <!-- Kotak CPU Aktif -->
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Status CPU Aktif</span>
+                <span id="cpu-interval-badge" class="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-200 text-slate-800">
+                  t = [0 – 3]
+                </span>
+              </div>
+
+              <div id="cpu-active-display" class="flex items-center gap-3 py-1">
+                <!-- Diisi dinamis oleh JS -->
+              </div>
+
+              <div id="cpu-status-footer" class="text-xs text-slate-600 pt-2 border-t border-slate-200 flex items-center justify-between">
+                <!-- Sisa BT & Status -->
+              </div>
+            </div>
+
+            <!-- Kotak Antrean Siap (Ready Queue FIFO) -->
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-col justify-between space-y-2.5">
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500">Ready Queue (FIFO)</span>
+                  <span class="text-[10px] font-semibold text-slate-400">Kepala → Ekor</span>
+                </div>
+                <div class="space-y-2">
+                  <div>
+                    <span class="text-[10px] font-semibold text-slate-500 block mb-1">Sebelum Dispatch:</span>
+                    <div id="queue-before-display" class="flex flex-wrap gap-1.5 min-h-[26px] items-center"></div>
+                  </div>
+                  <div class="pt-1.5 border-t border-slate-200/80">
+                    <span class="text-[10px] font-semibold text-slate-500 block mb-1">Sesudah Langkah Ini:</span>
+                    <div id="queue-after-display" class="flex flex-wrap gap-1.5 min-h-[26px] items-center"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Panel Narasi Penjelasan Otomatis -->
+          <div class="rounded-xl bg-blue-50/90 border border-blue-200 p-4">
+            <div class="flex items-start gap-2.5">
+              <div class="w-6 h-6 rounded-lg bg-teal-slate text-white flex items-center justify-center text-xs font-bold shrink-0 mt-0.5">
+                💡
+              </div>
+              <div class="space-y-1">
+                <h4 class="text-xs font-bold uppercase tracking-wide text-navy">Penjelasan Langkah Eksekusi</h4>
+                <p id="step-narrative" class="text-xs sm:text-sm text-slate-700 leading-relaxed">
+                  Memuat penjelasan simulasi...
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. Interactive Gantt Chart -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-3">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <h3 class="text-base font-bold text-navy">Visualisasi Gantt Chart Interaktif</h3>
+            <p class="text-xs text-slate-500">Klik blok segmen mana saja untuk melompat langsung ke langkah eksekusi tersebut</p>
+          </div>
+          <div class="flex items-center gap-3 text-xs text-slate-600">
+            <span class="inline-flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-sm bg-teal-slate inline-block"></span> Eksekusi Proses
+            </span>
+            <span class="inline-flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-sm bg-idle-hatch border border-slate-300 inline-block"></span> CPU Idle
+            </span>
+          </div>
+        </div>
+
+        <!-- Kontainer Gantt Chart Scrollable -->
+        <div class="overflow-x-auto pb-2 pt-1">
+          <div id="gantt-chart-container" class="min-w-[600px]">
+            <!-- Blok & label waktu dirender dinamis oleh JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Tabel Hasil Evaluasi & 4 Kartu Metrik Utama -->
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-5">
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider text-teal-slate">Evaluasi Kinerja</span>
+          <h3 class="text-lg font-bold text-navy">Rekapitulasi Metrik &amp; Penjabaran Perhitungan</h3>
+        </div>
+
+        <!-- 4 Kartu Ringkasan Metrik Utama -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <span class="text-xs font-semibold text-slate-500">Average Waiting Time (AWT)</span>
+            <div id="metric-awt" class="text-2xl font-extrabold font-mono text-navy mt-1">0.00</div>
+            <p id="formula-awt" class="text-[11px] font-mono text-slate-500 mt-1.5 break-all">—</p>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <span class="text-xs font-semibold text-slate-500">Average Turnaround Time (ATAT)</span>
+            <div id="metric-atat" class="text-2xl font-extrabold font-mono text-teal-slate mt-1">0.00</div>
+            <p id="formula-atat" class="text-[11px] font-mono text-slate-500 mt-1.5 break-all">—</p>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <span class="text-xs font-semibold text-slate-500">Average Response Time (ART)</span>
+            <div id="metric-art" class="text-2xl font-extrabold font-mono text-emerald-700 mt-1">0.00</div>
+            <p id="formula-art" class="text-[11px] font-mono text-slate-500 mt-1.5 break-all">—</p>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <span class="text-xs font-semibold text-slate-500">Context Switches (NCS)</span>
+            <div id="metric-ncs" class="text-2xl font-extrabold font-mono text-amber-700 mt-1">0</div>
+            <p id="formula-ncs" class="text-[11px] font-mono text-slate-500 mt-1.5">Segmen Eksekusi − 1</p>
+          </div>
+        </div>
+
+        <!-- Tabel Rincian Per Proses -->
+        <div class="overflow-x-auto rounded-xl border border-slate-200">
+          <table class="w-full text-left border-collapse text-xs sm:text-sm">
+            <thead>
+              <tr class="bg-navy text-white">
+                <th class="py-3 px-4 font-semibold">Proses</th>
+                <th class="py-3 px-3 font-semibold text-center">AT</th>
+                <th class="py-3 px-3 font-semibold text-center">BT</th>
+                <th class="py-3 px-3 font-semibold text-center">CT</th>
+                <th class="py-3 px-4 font-semibold text-center">TAT (CT − AT)</th>
+                <th class="py-3 px-4 font-semibold text-center">WT (TAT − BT)</th>
+                <th class="py-3 px-4 font-semibold text-center">RT (T_awal − AT)</th>
+              </tr>
+            </thead>
+            <tbody id="results-tbody" class="divide-y divide-slate-200 font-mono">
+              <!-- Baris hasil dirender dinamis oleh JS -->
+            </tbody>
+            <tfoot id="results-tfoot" class="bg-blue-50/80 font-mono font-bold text-navy border-t-2 border-navy/20">
+              <!-- Baris rata-rata dirender dinamis oleh JS -->
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =================================================================== -->
+    <!-- TAB 3: LATIHAN & KUIS INTERAKTIF                                    -->
+    <!-- =================================================================== -->
+    <section id="tab-kuis" class="hidden space-y-6 fade-in">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-7 space-y-5">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-wider text-teal-slate">Evaluasi Pemahaman Mahasiswa</span>
+            <h2 class="text-xl sm:text-2xl font-bold text-navy mt-0.5">
+              Latihan &amp; Kuis Interaktif Round Robin
+            </h2>
+            <p class="text-sm text-slate-600 mt-1">
+              Uji pemahaman Anda mengenai aturan <em>tie-break</em>, perhitungan <em>TAT/WT/RT</em>, dampak perubahan <em>Time Quantum</em>, dan temuan jurnal CJR.
+            </p>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button onclick="resetQuiz()" class="px-4 py-2 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-xs sm:text-sm font-semibold text-slate-700 transition">
+              ↻ Ulangi Kuis
+            </button>
+            <button onclick="gradeQuiz()" class="px-5 py-2 rounded-xl bg-navy hover:bg-navy-light text-white text-xs sm:text-sm font-bold transition shadow-sm">
+              ✓ Periksa Jawaban
+            </button>
+          </div>
+        </div>
+
+        <!-- Banner Skor Hasil Kuis -->
+        <div id="quiz-score-banner" class="hidden rounded-2xl p-5 border transition-all">
+          <!-- Diisi dinamis setelah klik Periksa Jawaban -->
+        </div>
+
+        <!-- Daftar 5 Soal Kuis -->
+        <div id="quiz-questions-container" class="space-y-5">
+          <!-- Dirender oleh JavaScript -->
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== FOOTER ==================== -->
+  <footer class="bg-white border-t border-slate-200 mt-10">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-slate-500">
+      <p>Media Pembelajaran Sistem Operasi • <strong>Algoritma Penjadwalan CPU Round Robin</strong></p>
+      <p>Berbasis Sintesis 10 Jurnal Ilmiah CJR (2015–2026)</p>
+    </div>
+  </footer>
+
+  <!-- ==================== LOGIKA JAVASCRIPT ==================== -->
+  <script>
+    // Palet warna kontras tinggi untuk tiap proses P1..P10+
+    const PROCESS_COLORS = [
+      '#2563EB', // P1: Royal Blue
+      '#0D9488', // P2: Teal
+      '#D97706', // P3: Amber
+      '#7C3AED', // P4: Violet
+      '#E11D48', // P5: Rose
+      '#059669', // P6: Emerald
+      '#EA580C', // P7: Orange
+      '#4F46E5', // P8: Indigo
+      '#0284C7', // P9: Sky
+      '#9333EA', // P10: Purple
+      '#0F766E', // P11
+      '#B91C1C'  // P12
+    ];
+
+    // Definisi 5 Studi Kasus Preset dari CJR
+    const PRESETS = {
+      preset1: {
+        id: 'preset1',
+        btnId: 'btn-preset1',
+        tq: 3,
+        description: '<strong>Preset 1 (Kasus Gabungan Wajib — 4 Proses):</strong> Menguji syarat minimal <strong>2 proses kedatangan sama</strong> (P1 dan P2 sama-sama tiba di <code>t = 0</code>) serta <strong>2 proses kedatangan berbeda</strong> (P3 menyusul di <code>t = 2</code> dan P4 menyusul di <code>t = 5</code>) dengan <code>TQ = 3</code>.',
+        processes: [
+          { name: 'P1', at: 0, bt: 5 },
+          { name: 'P2', at: 0, bt: 3 },
+          { name: 'P3', at: 2, bt: 6 },
+          { name: 'P4', at: 5, bt: 4 }
+        ]
+      },
+      preset2_25: {
+        id: 'preset2',
+        btnId: 'btn-preset2',
+        tq: 25,
+        description: '<strong>Preset 2 (Jurnal Iqbal et al., 2023 — Kasus 1 AT = 0 Serentak):</strong> Keempat proses tiba bersamaan di <code>t = 0</code> (BT: 20, 40, 60, 80 ms). Gunakan tombol di samping untuk membandingkan efek <code>TQ = 25 ms</code> vs <code>TQ = 15 ms</code>.',
+        processes: [
+          { name: 'P1', at: 0, bt: 20 },
+          { name: 'P2', at: 0, bt: 40 },
+          { name: 'P3', at: 0, bt: 60 },
+          { name: 'P4', at: 0, bt: 80 }
+        ]
+      },
+      preset2_15: {
+        id: 'preset2',
+        btnId: 'btn-preset2',
+        tq: 15,
+        description: '<strong>Preset 2 (Jurnal Iqbal et al., 2023 — Kasus 1 dengan TQ = 15 ms):</strong> Penyempitan kuantum dari 25 ms menjadi 15 ms mempercepat <em>Response Time</em> (ART turun dari 33,75 ms ke 22,50 ms), namun meningkatkan <em>Waiting Time</em> (AWT naik dari 75,0 ms ke 87,5 ms).',
+        processes: [
+          { name: 'P1', at: 0, bt: 20 },
+          { name: 'P2', at: 0, bt: 40 },
+          { name: 'P3', at: 0, bt: 60 },
+          { name: 'P4', at: 0, bt: 80 }
+        ]
+      },
+      preset3: {
+        id: 'preset3',
+        btnId: 'btn-preset3',
+        tq: 4,
+        description: '<strong>Preset 3 (Jurnal Widiarto et al., 2024 — Kedatangan Berbeda):</strong> Lima proses dengan AT bertahap (0, 3, 5, 9, 11) dan <code>TQ = 4</code>. Menghasilkan <code>AWT = 14,60</code> dan <code>ATAT = 22,80</code> sesuai keluaran program C dalam jurnal.',
+        processes: [
+          { name: 'P1', at: 0, bt: 7 },
+          { name: 'P2', at: 3, bt: 9 },
+          { name: 'P3', at: 5, bt: 5 },
+          { name: 'P4', at: 9, bt: 8 },
+          { name: 'P5', at: 11, bt: 12 }
+        ]
+      },
+      preset4: {
+        id: 'preset4',
+        btnId: 'btn-preset4',
+        tq: 3,
+        description: '<strong>Preset 4 (Jurnal Tampubolon &amp; Fajri, 2025 — Simulasi 10 Proses):</strong> Dataset lengkap 10 proses dengan gabungan kedatangan sama (P6 &amp; P7 di <code>t = 5</code>) dan kedatangan berbeda dengan <code>TQ = 3</code> (menghasilkan <code>AWT = 41,80</code>).',
+        processes: [
+          { name: 'P1', at: 0, bt: 5 },
+          { name: 'P2', at: 1, bt: 3 },
+          { name: 'P3', at: 2, bt: 12 },
+          { name: 'P4', at: 3, bt: 8 },
+          { name: 'P5', at: 4, bt: 9 },
+          { name: 'P6', at: 5, bt: 10 },
+          { name: 'P7', at: 5, bt: 6 },
+          { name: 'P8', at: 7, bt: 11 },
+          { name: 'P9', at: 8, bt: 5 },
+          { name: 'P10', at: 12, bt: 9 }
+        ]
+      },
+      preset5: {
+        id: 'preset5',
+        btnId: 'btn-preset5',
+        tq: 2,
+        description: '<strong>Preset 5 (Jurnal Sugiarti et al., 2026 — Skenario 1 Beban Seimbang):</strong> Lima proses berdurasi ringan-sedang (AT: 0, 1, 2, 3, 4) dengan <code>TQ = 2 ms</code>. Memperlihatkan sensitivitas aturan <em>tie-break</em> saat P2 tiba tepat di <code>t = 1</code> dan P3 tiba saat P1 di-preempt di <code>t = 2</code>.',
+        processes: [
+          { name: 'P1', at: 0, bt: 4 },
+          { name: 'P2', at: 1, bt: 3 },
+          { name: 'P3', at: 2, bt: 5 },
+          { name: 'P4', at: 3, bt: 2 },
+          { name: 'P5', at: 4, bt: 4 }
+        ]
+      }
+    };
+
+    // State Aplikasi
+    let currentProcesses = [];
+    let currentTQ = 3;
+    let simulationResult = null;
+    let currentStepIndex = 0;
+    let autoPlayTimer = null;
+
+    // ==================== NOTIFIKASI TOAST ====================
+    let toastTimeout = null;
+    function showToast(msg) {
+      const banner = document.getElementById('toast-banner');
+      const msgEl = document.getElementById('toast-message');
+      msgEl.textContent = msg;
+      banner.classList.remove('hidden');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => {
+        banner.classList.add('hidden');
+      }, 3200);
+    }
+
+    // ==================== NAVIGASI TAB ====================
+    function switchTab(tabName) {
+      stopAutoPlay();
+      const tabs = ['materi', 'simulator', 'kuis'];
+      tabs.forEach(t => {
+        const section = document.getElementById(`tab-${t}`);
+        const btn = document.getElementById(`btn-tab-${t}`);
+        if (t === tabName) {
+          section.classList.remove('hidden');
+          btn.classList.add('bg-teal-slate', 'text-white', 'shadow');
+          btn.classList.remove('text-slate-300', 'hover:text-white', 'hover:bg-white/5');
+        } else {
+          section.classList.add('hidden');
+          btn.classList.remove('bg-teal-slate', 'text-white', 'shadow');
+          btn.classList.add('text-slate-300', 'hover:text-white', 'hover:bg-white/5');
+        }
+      });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // ==================== MANAJEMEN PRESET & INPUT ====================
+    function loadPreset(presetKey) {
+      stopAutoPlay();
+      const preset = PRESETS[presetKey];
+      if (!preset) return;
+
+      currentTQ = preset.tq;
+      document.getElementById('input-tq').value = currentTQ;
+      currentProcesses = preset.processes.map((p, idx) => ({
+        name: p.name,
+        at: p.at,
+        bt: p.bt,
+        color: PROCESS_COLORS[idx % PROCESS_COLORS.length]
+      }));
+
+      // Highlight tombol preset aktif
+      document.querySelectorAll('.preset-btn').forEach(btn => {
+        btn.classList.remove('border-2', 'border-teal-slate', 'bg-blue-50/70');
+        btn.classList.add('border', 'border-slate-200', 'bg-white');
+      });
+      const activeBtn = document.getElementById(preset.btnId);
+      if (activeBtn) {
+        activeBtn.classList.remove('border', 'border-slate-200', 'bg-white');
+        activeBtn.classList.add('border-2', 'border-teal-slate', 'bg-blue-50/70');
+      }
+
+      // Tampilkan opsi cepat TQ=25 vs TQ=15 khusus Preset 2
+      const toggleBox = document.getElementById('preset2-tq-toggle');
+      if (preset.id === 'preset2') {
+        toggleBox.classList.remove('hidden');
+        const btn25 = document.getElementById('btn-tq-25');
+        const btn15 = document.getElementById('btn-tq-15');
+        if (currentTQ === 25) {
+          btn25.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-navy text-white';
+          btn15.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-white border border-slate-300 text-slate-700 hover:bg-slate-100';
+        } else {
+          btn15.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-navy text-white';
+          btn25.className = 'px-3 py-1.5 rounded-lg text-xs font-mono font-bold bg-white border border-slate-300 text-slate-700 hover:bg-slate-100';
+        }
+      } else {
+        toggleBox.classList.add('hidden');
+      }
+
+      document.getElementById('preset-description').innerHTML = preset.description;
+      renderProcessInputTable();
+      runSimulation(false);
+    }
+
+    function setQuickTQ(val) {
+      if (val === 25) loadPreset('preset2_25');
+      else if (val === 15) loadPreset('preset2_15');
+    }
+
+    function adjustTQ(delta) {
+      const input = document.getElementById('input-tq');
+      let val = parseInt(input.value, 10) || 1;
+      val = Math.max(1, val + delta);
+      input.value = val;
+      handleInputChange();
+    }
+
+    function renderProcessInputTable() {
+      const tbody = document.getElementById('process-input-tbody');
+      tbody.innerHTML = '';
+
+      currentProcesses.forEach((proc, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-50';
+        tr.innerHTML = `
+          <td class="py-2 px-3">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full shrink-0" style="background-color: ${proc.color}"></span>
+              <input type="text" value="${proc.name}" maxlength="8"
+                onchange="updateProcessField(${idx}, 'name', this.value)"
+                class="w-16 font-mono font-bold text-navy bg-white border border-slate-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-teal-slate" />
+            </div>
+          </td>
+          <td class="py-2 px-3 text-center">
+            <input type="number" min="0" max="999" value="${proc.at}"
+              onchange="updateProcessField(${idx}, 'at', this.value)"
+              class="w-16 text-center font-mono text-xs bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-slate" />
+          </td>
+          <td class="py-2 px-3 text-center">
+            <input type="number" min="1" max="999" value="${proc.bt}"
+              onchange="updateProcessField(${idx}, 'bt', this.value)"
+              class="w-16 text-center font-mono text-xs bg-white border border-slate-300 rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-teal-slate" />
+          </td>
+          <td class="py-2 px-2 text-center">
+            <button onclick="removeProcessRow(${idx})" title="Hapus proses"
+              class="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition disabled:opacity-30"
+              ${currentProcesses.length <= 1 ? 'disabled' : ''}>
+              ✕
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      updateCriteriaBadges();
+    }
+
+    function updateProcessField(index, field, rawValue) {
+      if (field === 'name') {
+        const cleaned = rawValue.trim() || `P${index + 1}`;
+        currentProcesses[index].name = cleaned;
+      } else if (field === 'at') {
+        let num = parseInt(rawValue, 10);
+        if (isNaN(num) || num < 0) {
+          num = 0;
+          showToast('Arrival Time (AT) minimal bernilai 0.');
+        }
+        currentProcesses[index].at = num;
+      } else if (field === 'bt') {
+        let num = parseInt(rawValue, 10);
+        if (isNaN(num) || num < 1) {
+          num = 1;
+          showToast('Burst Time (BT) minimal bernilai 1.');
+        }
+        currentProcesses[index].bt = num;
+      }
+      renderProcessInputTable();
+      runSimulation(false);
+    }
+
+    function addProcessRow() {
+      if (currentProcesses.length >= 12) {
+        showToast('Maksimal 12 proses agar visualisasi Gantt Chart tetap nyaman dibaca.');
+        return;
+      }
+      const nextNum = currentProcesses.length + 1;
+      const lastAT = currentProcesses.length > 0 ? currentProcesses[currentProcesses.length - 1].at : 0;
+      currentProcesses.push({
+        name: `P${nextNum}`,
+        at: lastAT + 2,
+        bt: 4,
+        color: PROCESS_COLORS[(nextNum - 1) % PROCESS_COLORS.length]
+      });
+      renderProcessInputTable();
+      runSimulation(false);
+      showToast(`Proses P${nextNum} ditambahkan.`);
+    }
+
+    function removeProcessRow(index) {
+      if (currentProcesses.length <= 1) {
+        showToast('Minimal harus ada 1 proses di dalam antrean.');
+        return;
+      }
+      const removed = currentProcesses[index].name;
+      currentProcesses.splice(index, 1);
+      // Re-assign colors cleanly
+      currentProcesses.forEach((p, idx) => {
+        p.color = PROCESS_COLORS[idx % PROCESS_COLORS.length];
+      });
+      renderProcessInputTable();
+      runSimulation(false);
+      showToast(`Proses ${removed} dihapus.`);
+    }
+
+    function handleInputChange() {
+      const tqInput = document.getElementById('input-tq');
+      let tqVal = parseInt(tqInput.value, 10);
+      if (isNaN(tqVal) || tqVal < 1) {
+        tqVal = 1;
+        tqInput.value = 1;
+        showToast('Time Quantum (TQ) minimal bernilai 1.');
+      }
+      currentTQ = tqVal;
+      runSimulation(false);
+    }
+
+    // Cek otomatis syarat "Minimal 2 kedatangan sama & minimal 2 kedatangan berbeda"
+    function updateCriteriaBadges() {
+      const container = document.getElementById('criteria-badges');
+      const atGroups = {};
+      currentProcesses.forEach(p => {
+        if (!atGroups[p.at]) atGroups[p.at] = [];
+        atGroups[p.at].push(p.name);
+      });
+
+      // Cari kelompok AT yang memiliki >= 2 proses bersamaan
+      const sameGroups = Object.entries(atGroups).filter(([_, list]) => list.length >= 2);
+      const hasMin2Same = sameGroups.length > 0;
+
+      // Hitung proses yang datang pada waktu berbeda (minimal 2 waktu kedatangan berbeda di luar kelompok serentak atau minimal 3 timestamp unik / >=2 proses beda waktu)
+      const uniqueATs = Object.keys(atGroups);
+      // Jika ada kelompok serentak (misal t=0 untuk P1,P2), cek apakah ada >= 2 proses lain dengan AT berbeda (misal t=2 dan t=5)
+      let diffCount = 0;
+      if (sameGroups.length > 0) {
+        const primarySameAT = sameGroups[0][0];
+        diffCount = currentProcesses.filter(p => String(p.at) !== String(primarySameAT)).length;
+      } else {
+        diffCount = uniqueATs.length >= 2 ? currentProcesses.length : 0;
+      }
+      const hasMin2Diff = uniqueATs.length >= 2 && diffCount >= 2;
+
+      const sameBadge = hasMin2Same
+        ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+             <span>✓</span> Min. 2 AT Sama (${sameGroups[0][1].join(', ')} @ t=${sameGroups[0][0]})
+           </span>`
+        : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+             <span>!</span> Belum ada 2 proses AT sama
+           </span>`;
+
+      const diffBadge = hasMin2Diff
+        ? `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+             <span>✓</span> Min. 2 AT Berbeda (${uniqueATs.length} titik waktu)
+           </span>`
+        : `<span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+             <span>!</span> Semua proses AT serentak (AT=${uniqueATs[0] ?? 0})
+           </span>`;
+
+      container.innerHTML = sameBadge + diffBadge;
+    }
+
+    // ==================== MESIN SIMULASI ROUND ROBIN ====================
+    function computeRoundRobin(processesInput, tq) {
+      // Salin dan urutkan berdasarkan AT ascending, lalu indeks asli ascending
+      const procs = processesInput.map((p, idx) => ({
+        id: idx,
+        name: p.name,
+        at: Number(p.at),
+        bt: Number(p.bt),
+        rem: Number(p.bt),
+        color: p.color,
+        firstStart: null,
+        ct: 0,
+        tat: 0,
+        wt: 0,
+        rt: 0
+      }));
+
+      const sortedQueueOrder = [...procs].sort((a, b) => (a.at - b.at) || (a.id - b.id));
+      const unarrived = [...sortedQueueOrder];
+      const readyQueue = [];
+      const steps = [];
+      let currentTime = 0;
+
+      // Masukkan proses yang tiba pada t = 0
+      while (unarrived.length > 0 && unarrived[0].at <= currentTime) {
+        readyQueue.push(unarrived.shift());
+      }
+
+      while (readyQueue.length > 0 || unarrived.length > 0) {
+        if (readyQueue.length === 0) {
+          // Kondisi CPU Idle
+          const nextArrival = unarrived[0].at;
+          const arrivingNow = [];
+          while (unarrived.length > 0 && unarrived[0].at <= nextArrival) {
+            const p = unarrived.shift();
+            readyQueue.push(p);
+            arrivingNow.push(p.name);
+          }
+
+          steps.push({
+            type: 'idle',
+            name: 'IDLE',
+            color: '#94A3B8',
+            start: currentTime,
+            end: nextArrival,
+            duration: nextArrival - currentTime,
+            remBefore: 0,
+            remAfter: 0,
+            status: 'idle',
+            queueBefore: [],
+            queueAfter: readyQueue.map(p => ({ name: p.name, rem: p.rem, color: p.color })),
+            narrative: `Pada rentang waktu <strong>t = ${currentTime} hingga ${nextArrival}</strong>, <em>Ready Queue</em> kosong sehingga <strong>CPU Idle</strong> selama ${nextArrival - currentTime} satuan waktu. Pada <strong>t = ${nextArrival}</strong>, proses <strong>${arrivingNow.join(', ')}</strong> tiba dan masuk ke antrean.`
+          });
+
+          currentTime = nextArrival;
+          continue;
+        }
+
+        // Snapshot antrean sebelum dispatch
+        const queueBefore = readyQueue.map(p => ({ name: p.name, rem: p.rem, color: p.color }));
+
+        // Ambil proses dari kepala Ready Queue (FIFO)
+        const currentProc = readyQueue.shift();
+        if (currentProc.firstStart === null) {
+          currentProc.firstStart = currentTime;
+        }
+
+        const execDuration = Math.min(currentProc.rem, tq);
+        const start = currentTime;
+        const end = currentTime + execDuration;
+        const remBefore = currentProc.rem;
+        const remAfter = remBefore - execDuration;
+
+        // Cek proses yang baru tiba selama (start, end]
+        // Aturan Tie-Break: proses yang tiba tepat di t = end masuk antrean LEBIH DULU sebelum currentProc di-preempt!
+        const arrivedDuring = [];
+        const arrivedExactEnd = [];
+        while (unarrived.length > 0 && unarrived[0].at <= end) {
+          const arrivingProc = unarrived.shift();
+          readyQueue.push(arrivingProc);
+          if (arrivingProc.at === end) {
+            arrivedExactEnd.push(arrivingProc.name);
+          } else {
+            arrivedDuring.push(`${arrivingProc.name} (t=${arrivingProc.at})`);
+          }
+        }
+
+        currentProc.rem = remAfter;
+        let status = '';
+        if (remAfter === 0) {
+          currentProc.ct = end;
+          status = 'completed';
+        } else {
+          readyQueue.push(currentProc);
+          status = 'preempted';
+        }
+
+        const queueAfter = readyQueue.map(p => ({ name: p.name, rem: p.rem, color: p.color }));
+
+        // Susun narasi pembelajaran Bahasa Indonesia yang sangat jelas
+        let narrativeParts = [];
+        narrativeParts.push(`CPU mengeksekusi <strong>${currentProc.name}</strong> dari kepala antrean pada <strong>t = ${start} s.d. ${end}</strong> (durasi ${execDuration}, sisa BT: ${remBefore} → ${remAfter}).`);
+
+        if (arrivedDuring.length > 0) {
+          narrativeParts.push(`Selama eksekusi berlangsung, proses baru <strong>${arrivedDuring.join(', ')}</strong> tiba dan masuk ke ekor <em>Ready Queue</em>.`);
+        }
+
+        if (status === 'completed') {
+          narrativeParts.push(`Karena sisa BT = 0, <strong>${currentProc.name} SELESAI</strong> pada <strong>t = ${end}</strong> (CT = ${end}).`);
+          if (arrivedExactEnd.length > 0) {
+            narrativeParts.push(`Tepat pada <strong>t = ${end}</strong>, proses <strong>${arrivedExactEnd.join(', ')}</strong> tiba dan masuk ke antrean.`);
+          }
+        } else {
+          if (arrivedExactEnd.length > 0) {
+            narrativeParts.push(`<strong>⚖️ Aturan Tie-Break:</strong> Tepat pada <strong>t = ${end}</strong> saat TQ <strong>${currentProc.name}</strong> habis, proses baru <strong>${arrivedExactEnd.join(', ')}</strong> tiba sehingga dimasukkan ke ekor antrean <em>lebih dulu</em>, baru kemudian <strong>${currentProc.name} (sisa ${remAfter})</strong> di-<em>preempt</em> ke belakangnya.`);
+          } else {
+            narrativeParts.push(`Jatah TQ habis dan sisa BT = ${remAfter} &gt; 0, sehingga <strong>${currentProc.name}</strong> di-<em>preempt</em> dan dikembalikan ke ekor <em>Ready Queue</em>.`);
+          }
+        }
+
+        steps.push({
+          type: 'process',
+          name: currentProc.name,
+          color: currentProc.color,
+          start,
+          end,
+          duration: execDuration,
+          remBefore,
+          remAfter,
+          status,
+          queueBefore,
+          queueAfter,
+          narrative: narrativeParts.join(' ')
+        });
+
+        currentTime = end;
+      }
+
+      // Hitung metrik individual & rata-rata
+      let sumTAT = 0;
+      let sumWT = 0;
+      let sumRT = 0;
+
+      procs.forEach(p => {
+        p.tat = p.ct - p.at;
+        p.wt = p.tat - p.bt;
+        p.rt = p.firstStart - p.at;
+        sumTAT += p.tat;
+        sumWT += p.wt;
+        sumRT += p.rt;
+      });
+
+      const n = procs.length;
+      const nonIdleSteps = steps.filter(s => s.type === 'process');
+      const ncs = nonIdleSteps.length > 0 ? nonIdleSteps.length - 1 : 0;
+
+      return {
+        processes: procs,
+        steps,
+        totalTime: currentTime,
+        metrics: {
+          awt: sumWT / n,
+          atat: sumTAT / n,
+          art: sumRT / n,
+          ncs,
+          sumWT,
+          sumTAT,
+          sumRT,
+          nonIdleSegments: nonIdleSteps.length
+        }
+      };
+    }
+
+    function runSimulation(notify = false) {
+      stopAutoPlay();
+      simulationResult = computeRoundRobin(currentProcesses, currentTQ);
+      currentStepIndex = 0;
+      renderStepView();
+      renderGanttChart();
+      renderResultsTable();
+      if (notify) {
+        showToast('Simulasi berhasil diperbarui.');
+      }
+    }
+
+    // ==================== RENDER TAMPILAN PER LANGKAH ====================
+    function renderStepView() {
+      if (!simulationResult || simulationResult.steps.length === 0) return;
+
+      const totalSteps = simulationResult.steps.length;
+      currentStepIndex = Math.max(0, Math.min(currentStepIndex, totalSteps - 1));
+      const step = simulationResult.steps[currentStepIndex];
+
+      // Update badge langkah & tombol prev/next
+      document.getElementById('step-counter-badge').textContent = `Langkah ${currentStepIndex + 1} / ${totalSteps}`;
+      document.getElementById('btn-prev-step').disabled = currentStepIndex === 0;
+      document.getElementById('btn-next-step').disabled = currentStepIndex === totalSteps - 1;
+
+      // Update Kotak CPU Aktif
+      document.getElementById('cpu-interval-badge').textContent = `t = [${step.start} – ${step.end}]`;
+      const cpuDisplay = document.getElementById('cpu-active-display');
+      const cpuFooter = document.getElementById('cpu-status-footer');
+
+      if (step.type === 'idle') {
+        cpuDisplay.innerHTML = `
+          <div class="w-11 h-11 rounded-xl bg-idle-hatch border border-slate-300 flex items-center justify-center font-mono font-bold text-slate-600 text-xs">
+            IDLE
+          </div>
+          <div>
+            <div class="text-sm font-bold text-slate-700">CPU Menunggu (Idle)</div>
+            <div class="text-xs text-slate-500">Tidak ada proses di antrean</div>
+          </div>
+        `;
+        cpuFooter.innerHTML = `
+          <span>Durasi Idle: <strong>${step.duration}</strong></span>
+          <span class="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-semibold text-[11px]">CPU Idle</span>
+        `;
+      } else {
+        const statusBadge = step.status === 'completed'
+          ? `<span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[11px]">✓ Selesai (CT=${step.end})</span>`
+          : `<span class="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold text-[11px]">↻ Preempted</span>`;
+
+        cpuDisplay.innerHTML = `
+          <div class="w-11 h-11 rounded-xl text-white flex items-center justify-center font-mono font-extrabold text-sm shadow-sm" style="background-color: ${step.color}">
+            ${step.name}
+          </div>
+          <div>
+            <div class="text-sm font-bold text-navy">Proses ${step.name} Berjalan</div>
+            <div class="text-xs text-slate-500 font-mono">Durasi: ${step.duration} (TQ = ${currentTQ})</div>
+          </div>
+        `;
+        cpuFooter.innerHTML = `
+          <span class="font-mono">Sisa BT: <strong>${step.remBefore} → ${step.remAfter}</strong></span>
+          ${statusBadge}
+        `;
+      }
+
+      // Render Ready Queue Before & After
+      document.getElementById('queue-before-display').innerHTML = renderQueuePills(step.queueBefore);
+      document.getElementById('queue-after-display').innerHTML = renderQueuePills(step.queueAfter);
+
+      // Update Narasi Penjelasan
+      document.getElementById('step-narrative').innerHTML = step.narrative;
+
+      // Update Highlight di Gantt Chart
+      highlightActiveGanttSegment();
+    }
+
+    function renderQueuePills(queueList) {
+      if (!queueList || queueList.length === 0) {
+        return `<span class="text-xs italic text-slate-400">Antrean kosong</span>`;
+      }
+      return queueList.map((item, idx) => `
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-white font-mono text-[11px] font-semibold shadow-xs" style="background-color: ${item.color}">
+          ${idx === 0 ? '▶ ' : ''}${item.name}<span class="opacity-85">(${item.rem})</span>
+        </span>
+      `).join('');
+    }
+
+    // ==================== KONTROL PLAYBACK ====================
+    function nextStep() {
+      if (!simulationResult) return;
+      if (currentStepIndex < simulationResult.steps.length - 1) {
+        currentStepIndex++;
+        renderStepView();
+      } else {
+        stopAutoPlay();
+      }
+    }
+
+    function prevStep() {
+      stopAutoPlay();
+      if (!simulationResult) return;
+      if (currentStepIndex > 0) {
+        currentStepIndex--;
+        renderStepView();
+      }
+    }
+
+    function goToStep(idx) {
+      stopAutoPlay();
+      if (!simulationResult) return;
+      currentStepIndex = idx;
+      renderStepView();
+    }
+
+    function goToLastStep() {
+      stopAutoPlay();
+      if (!simulationResult) return;
+      currentStepIndex = simulationResult.steps.length - 1;
+      renderStepView();
+    }
+
+    function toggleAutoPlay() {
+      if (autoPlayTimer) {
+        stopAutoPlay();
+      } else {
+        if (currentStepIndex >= simulationResult.steps.length - 1) {
+          currentStepIndex = 0;
+          renderStepView();
+        }
+        const speed = parseInt(document.getElementById('play-speed').value, 10) || 950;
+        document.getElementById('autoplay-icon').textContent = '⏸';
+        document.getElementById('autoplay-label').textContent = 'Pause';
+        autoPlayTimer = setInterval(() => {
+          if (currentStepIndex < simulationResult.steps.length - 1) {
+            currentStepIndex++;
+            renderStepView();
+          } else {
+            stopAutoPlay();
+          }
+        }, speed);
+      }
+    }
+
+    function stopAutoPlay() {
+      if (autoPlayTimer) {
+        clearInterval(autoPlayTimer);
+        autoPlayTimer = null;
+      }
+      const iconEl = document.getElementById('autoplay-icon');
+      const labelEl = document.getElementById('autoplay-label');
+      if (iconEl && labelEl) {
+        iconEl.textContent = '▶';
+        labelEl.textContent = 'Auto Play';
+      }
+    }
+
+    function updatePlaySpeed() {
+      if (autoPlayTimer) {
+        stopAutoPlay();
+        toggleAutoPlay();
+      }
+    }
+
+    // ==================== RENDER GANTT CHART ====================
+    function renderGanttChart() {
+      const container = document.getElementById('gantt-chart-container');
+      if (!simulationResult || simulationResult.steps.length === 0) {
+        container.innerHTML = '';
+        return;
+      }
+
+      const steps = simulationResult.steps;
+      const totalDuration = simulationResult.totalTime || 1;
+
+      // Bangun bar segmen proporsional dengan lebar minimum agar mudah dibaca
+      let barsHTML = `<div class="flex w-full rounded-xl overflow-hidden border border-slate-300 shadow-inner bg-slate-100 h-14">`;
+      steps.forEach((step, idx) => {
+        const flexGrow = Math.max(step.duration, totalDuration * 0.035);
+        const isIdle = step.type === 'idle';
+        const styleAttr = isIdle
+          ? `flex: ${flexGrow} 1 0%;`
+          : `flex: ${flexGrow} 1 0%; background-color: ${step.color};`;
+        const classes = isIdle
+          ? 'gantt-seg bg-idle-hatch text-slate-700 border-r border-slate-300 cursor-pointer flex flex-col items-center justify-center px-1 transition-all'
+          : 'gantt-seg text-white border-r border-white/25 cursor-pointer flex flex-col items-center justify-center px-1 transition-all hover:brightness-110';
+
+        barsHTML += `
+          <div id="gantt-seg-${idx}" onclick="goToStep(${idx})" style="${styleAttr}" class="${classes}"
+            title="${step.name} [${step.start} - ${step.end}] (Durasi: ${step.duration})">
+            <span class="font-mono font-extrabold text-xs sm:text-sm leading-tight truncate max-w-full">${step.name}</span>
+            <span class="font-mono text-[10px] opacity-90">${step.start}–${step.end}</span>
+          </div>
+        `;
+      });
+      barsHTML += `</div>`;
+
+      // Baris penanda waktu presisi di bawah Gantt Chart
+      let ticksHTML = `<div class="flex w-full mt-1.5 font-mono text-[11px] font-semibold text-slate-600">`;
+      steps.forEach((step, idx) => {
+        const flexGrow = Math.max(step.duration, totalDuration * 0.035);
+        ticksHTML += `
+          <div style="flex: ${flexGrow} 1 0%;" class="relative flex justify-between">
+            <span class="-translate-x-1/2 ${idx === 0 ? 'translate-x-0' : ''}">${step.start}</span>
+            ${idx === steps.length - 1 ? `<span>${step.end}</span>` : ''}
+          </div>
+        `;
+      });
+      ticksHTML += `</div>`;
+
+      container.innerHTML = barsHTML + ticksHTML;
+      highlightActiveGanttSegment();
+    }
+
+    function highlightActiveGanttSegment() {
+      document.querySelectorAll('.gantt-seg').forEach((el, idx) => {
+        if (idx === currentStepIndex) {
+          el.classList.add('ring-4', 'ring-navy', 'ring-inset', 'z-10', 'scale-[1.01]');
+        } else {
+          el.classList.remove('ring-4', 'ring-navy', 'ring-inset', 'z-10', 'scale-[1.01]');
+        }
+      });
+    }
+
+    // ==================== RENDER TABEL EVALUASI & METRIK ====================
+    function renderResultsTable() {
+      if (!simulationResult) return;
+      const { processes, metrics } = simulationResult;
+      const n = processes.length;
+
+      // Update 4 Kartu Ringkasan Metrik
+      document.getElementById('metric-awt').textContent = metrics.awt.toFixed(2);
+      document.getElementById('formula-awt').textContent =
+        `(${processes.map(p => p.wt).join(' + ')}) / ${n} = ${metrics.sumWT}/${n}`;
+
+      document.getElementById('metric-atat').textContent = metrics.atat.toFixed(2);
+      document.getElementById('formula-atat').textContent =
+        `(${processes.map(p => p.tat).join(' + ')}) / ${n} = ${metrics.sumTAT}/${n}`;
+
+      document.getElementById('metric-art').textContent = metrics.art.toFixed(2);
+      document.getElementById('formula-art').textContent =
+        `(${processes.map(p => p.rt).join(' + ')}) / ${n} = ${metrics.sumRT}/${n}`;
+
+      document.getElementById('metric-ncs').textContent = metrics.ncs;
+      document.getElementById('formula-ncs').textContent =
+        `${metrics.nonIdleSegments} segmen proses − 1 = ${metrics.ncs} kali`;
+
+      // Render Baris Tabel Per Proses
+      const tbody = document.getElementById('results-tbody');
+      tbody.innerHTML = processes.map(p => `
+        <tr class="hover:bg-slate-50">
+          <td class="py-2.5 px-4 font-sans font-bold text-navy">
+            <span class="inline-flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full" style="background-color: ${p.color}"></span>
+              ${p.name}
+            </span>
+          </td>
+          <td class="py-2.5 px-3 text-center text-slate-700">${p.at}</td>
+          <td class="py-2.5 px-3 text-center text-slate-700">${p.bt}</td>
+          <td class="py-2.5 px-3 text-center font-bold text-navy">${p.ct}</td>
+          <td class="py-2.5 px-4 text-center text-teal-slate font-semibold">
+            ${p.tat} <span class="text-[11px] font-normal text-slate-400">(${p.ct}−${p.at})</span>
+          </td>
+          <td class="py-2.5 px-4 text-center text-slate-800 font-semibold">
+            ${p.wt} <span class="text-[11px] font-normal text-slate-400">(${p.tat}−${p.bt})</span>
+          </td>
+          <td class="py-2.5 px-4 text-center text-emerald-700 font-semibold">
+            ${p.rt} <span class="text-[11px] font-normal text-slate-400">(${p.firstStart}−${p.at})</span>
+          </td>
+        </tr>
+      `).join('');
+
+      // Render Baris Rata-rata
+      const avgBT = (processes.reduce((acc, p) => acc + p.bt, 0) / n).toFixed(2);
+      const avgCT = (processes.reduce((acc, p) => acc + p.ct, 0) / n).toFixed(2);
+      document.getElementById('results-tfoot').innerHTML = `
+        <tr>
+          <td class="py-3 px-4 font-sans">Rata-rata (${n} Proses)</td>
+          <td class="py-3 px-3 text-center">—</td>
+          <td class="py-3 px-3 text-center">${avgBT}</td>
+          <td class="py-3 px-3 text-center">${avgCT}</td>
+          <td class="py-3 px-4 text-center text-teal-slate">${metrics.atat.toFixed(2)}</td>
+          <td class="py-3 px-4 text-center text-navy">${metrics.awt.toFixed(2)}</td>
+          <td class="py-3 px-4 text-center text-emerald-700">${metrics.art.toFixed(2)}</td>
+        </tr>
+      `;
+    }
+
+    // ==================== MODUL KUIS INTERAKTIF (TAB 3) ====================
+    const QUIZ_DATA = [
+      {
+        q: '1. Pada penjadwalan Round Robin dengan kedatangan berbeda (AT ≠ 0), apa yang terjadi menurut aturan Tie-Break apabila proses baru P3 tiba tepat pada t = 4 bersamaan dengan habisnya Time Quantum proses P1 yang masih memiliki sisa Burst Time?',
+        options: [
+          'P1 langsung dieksekusi kembali tanpa mengantre karena masih memiliki sisa Burst Time.',
+          'P1 masuk ke ekor Ready Queue lebih dulu, baru kemudian P3 ditempatkan di belakang P1.',
+          'P3 yang baru tiba dimasukkan ke ekor Ready Queue lebih dulu, kemudian P1 yang di-preempt diletakkan di belakang P3.',
+          'P3 langsung merebut CPU secara paksa meskipun ada proses lain di kepala Ready Queue.'
+        ],
+        correct: 2,
+        explanation: 'Berdasarkan aturan Tie-Break baku sistem operasi, proses baru yang tiba tepat pada titik waktu t = t_selesai dimasukkan ke ekor Ready Queue terlebih dahulu sebelum proses yang baru habis masa quantum-nya (preempted) dikembalikan ke ekor antrean.'
+      },
+      {
+        q: '2. Diketahui 4 proses: P1(AT=0, BT=5), P2(AT=0, BT=3), P3(AT=2, BT=6), dan P4(AT=5, BT=4) dijadwalkan dengan Round Robin (TQ = 3). Berapakah nilai Turnaround Time (TAT) dan Waiting Time (WT) untuk proses P3?',
+        options: [
+          'TAT = 15 dan WT = 9',
+          'TAT = 17 dan WT = 11',
+          'TAT = 13 dan WT = 7',
+          'TAT = 11 dan WT = 5'
+        ],
+        correct: 0,
+        explanation: 'Urutan Gantt Chart: [0-P1-3] | [3-P2-6] | [6-P3-9] | [9-P1-11] | [11-P4-14] | [14-P3-17] | [17-P4-18]. Proses P3 selesai pada CT = 17. Maka TAT = CT − AT = 17 − 2 = 15, dan WT = TAT − BT = 15 − 6 = 9.'
+      },
+      {
+        q: '3. Berdasarkan kajian jurnal Tampubolon & Fajri (2025) serta Putra & Purnomo (2021), dampak utama apabila nilai Time Quantum (TQ) ditetapkan terlalu kecil (misalnya TQ = 1 ms pada burst time puluhan ms) adalah...',
+        options: [
+          'Algoritma Round Robin terdegradasi menjadi First-Come, First-Served (FCFS).',
+          'Frekuensi Context Switching (NCS) melonjak drastis sehingga menimbulkan overhead CPU dan menaikkan AWT.',
+          'Terjadi starvation permanen pada proses-proses dengan Burst Time pendek.',
+          'Response Time (RT) menjadi paling lambat dibandingkan algoritma lainnya.'
+        ],
+        correct: 1,
+        explanation: 'TQ yang terlalu kecil memang membuat Response Time awal sangat cepat, tetapi menyebabkan CPU terlalu sering menghentikan proses dan melakukan context switching, sehingga overhead meningkat dan rata-rata waktu tunggu (AWT) membengkak.'
+      },
+      {
+        q: '4. Apabila sebuah Gantt Chart Round Robin terdiri atas 10 segmen eksekusi proses (tanpa periode CPU Idle), berapakah jumlah Number of Context Switches (NCS) berdasarkan definisi standar transisi segmen?',
+        options: [
+          '10 kali',
+          '11 kali',
+          '9 kali',
+          '5 kali'
+        ],
+        correct: 2,
+        explanation: 'Perpindahan kendali prosesor terjadi di antara dua segmen berurutan, sehingga untuk N segmen eksekusi proses (di luar CPU Idle), jumlah context switch adalah N − 1 = 10 − 1 = 9 kali.'
+      },
+      {
+        q: '5. Inovasi algoritma ERRDTQ (Zohora et al., 2024) dan MARR (Sakshi et al., 2022) dalam jurnal CJR bertujuan mengatasi kelemahan Round Robin klasik dengan cara...',
+        options: [
+          'Menghapus mekanisme preemption agar seluruh proses berjalan sampai tuntas seperti FCFS.',
+          'Menghitung Time Quantum secara dinamis berdasarkan statistik distribusi antrean (seperti kombinasi Median-Mean atau Persentil ke-80).',
+          'Memberikan Time Quantum tetap sebesar 1 ms untuk seluruh beban kerja di Cloud Computing.',
+          'Menjalankan proses dengan Burst Time paling besar terlebih dahulu tanpa batasan waktu.'
+        ],
+        correct: 1,
+        explanation: 'MARR menghitung TQ dinamis dari (Median + Mean)/2, sedangkan ERRDTQ memanfaatkan persentil ke-80 dari panjang burst time aktif untuk mencegah convoy effect pada beban kerja asimetris di Cloud Computing.'
+      }
+    ];
+
+    function renderQuiz() {
+      const container = document.getElementById('quiz-questions-container');
+      container.innerHTML = QUIZ_DATA.map((item, qIdx) => `
+        <div id="quiz-card-${qIdx}" class="rounded-xl border border-slate-200 bg-slate-50/70 p-4 sm:p-5 space-y-3">
+          <p class="text-sm sm:text-base font-bold text-navy leading-snug">${item.q}</p>
+          <div class="space-y-2">
+            ${item.options.map((opt, oIdx) => `
+              <label id="quiz-opt-${qIdx}-${oIdx}"
+                class="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:border-teal-slate cursor-pointer transition text-xs sm:text-sm">
+                <input type="radio" name="quiz-q-${qIdx}" value="${oIdx}" class="mt-0.5 accent-navy w-4 h-4 shrink-0" />
+                <span class="text-slate-700">${opt}</span>
+              </label>
+            `).join('')}
+          </div>
+          <div id="quiz-exp-${qIdx}" class="hidden rounded-xl p-3.5 text-xs sm:text-sm leading-relaxed border">
+            <!-- Pembahasan muncul saat diperiksa -->
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function gradeQuiz() {
+      let score = 0;
+      let unanswered = 0;
+
+      QUIZ_DATA.forEach((item, qIdx) => {
+        const selected = document.querySelector(`input[name="quiz-q-${qIdx}"]:checked`);
+        const expBox = document.getElementById(`quiz-exp-${qIdx}`);
+        const card = document.getElementById(`quiz-card-${qIdx}`);
+
+        // Reset styling opsi
+        item.options.forEach((_, oIdx) => {
+          const optLabel = document.getElementById(`quiz-opt-${qIdx}-${oIdx}`);
+          optLabel.classList.remove('border-emerald-500', 'bg-emerald-50', 'border-rose-500', 'bg-rose-50');
+        });
+
+        const correctLabel = document.getElementById(`quiz-opt-${qIdx}-${item.correct}`);
+        correctLabel.classList.add('border-emerald-500', 'bg-emerald-50');
+
+        if (!selected) {
+          unanswered++;
+          card.classList.remove('border-emerald-300', 'border-rose-300');
+          card.classList.add('border-amber-300');
+          expBox.className = 'rounded-xl p-3.5 text-xs sm:text-sm leading-relaxed border bg-amber-50 border-amber-200 text-amber-900';
+          expBox.innerHTML = `<strong>Belum dijawab.</strong> Jawaban benar adalah opsi ke-${item.correct + 1}.<br/><span class="text-slate-700 mt-1 block">${item.explanation}</span>`;
+        } else {
+          const userAns = parseInt(selected.value, 10);
+          if (userAns === item.correct) {
+            score++;
+            card.classList.remove('border-amber-300', 'border-rose-300');
+            card.classList.add('border-emerald-300');
+            expBox.className = 'rounded-xl p-3.5 text-xs sm:text-sm leading-relaxed border bg-emerald-50 border-emerald-200 text-emerald-900';
+            expBox.innerHTML = `<strong>✓ Jawaban Tepat!</strong> ${item.explanation}`;
+          } else {
+            const wrongLabel = document.getElementById(`quiz-opt-${qIdx}-${userAns}`);
+            wrongLabel.classList.add('border-rose-500', 'bg-rose-50');
+            card.classList.remove('border-amber-300', 'border-emerald-300');
+            card.classList.add('border-rose-300');
+            expBox.className = 'rounded-xl p-3.5 text-xs sm:text-sm leading-relaxed border bg-rose-50 border-rose-200 text-rose-900';
+            expBox.innerHTML = `<strong>✕ Kurang Tepat.</strong> ${item.explanation}`;
+          }
+        }
+        expBox.classList.remove('hidden');
+      });
+
+      const finalScore = Math.round((score / QUIZ_DATA.length) * 100);
+      const banner = document.getElementById('quiz-score-banner');
+      banner.classList.remove('hidden');
+
+      if (finalScore >= 80) {
+        banner.className = 'rounded-2xl p-5 border bg-emerald-50 border-emerald-200 text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+      } else if (finalScore >= 60) {
+        banner.className = 'rounded-2xl p-5 border bg-blue-50 border-blue-200 text-navy flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+      } else {
+        banner.className = 'rounded-2xl p-5 border bg-amber-50 border-amber-200 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3';
+      }
+
+      banner.innerHTML = `
+        <div>
+          <span class="text-xs font-bold uppercase tracking-wider opacity-75">Hasil Evaluasi Kuis</span>
+          <h3 class="text-lg sm:text-xl font-extrabold mt-0.5">Skor Anda: ${finalScore} / 100 (${score} dari ${QUIZ_DATA.length} Soal Benar)</h3>
+          <p class="text-xs sm:text-sm mt-1 opacity-90">
+            ${unanswered > 0 ? `Terdapat ${unanswered} soal yang belum dipilih. ` : ''}Silakan baca pembahasan langkah demi langkah pada setiap kartu soal di bawah ini.
+          </p>
+        </div>
+      `;
+      banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function resetQuiz() {
+      document.getElementById('quiz-score-banner').classList.add('hidden');
+      renderQuiz();
+      showToast('Kuis berhasil diatur ulang.');
+    }
+
+    // ==================== INISIALISASI SAAT HALAMAN DIMUAT ====================
+    window.addEventListener('DOMContentLoaded', () => {
+      loadPreset('preset1');
+      renderQuiz();
+    });
+  </script>
+</body>
+</html>
